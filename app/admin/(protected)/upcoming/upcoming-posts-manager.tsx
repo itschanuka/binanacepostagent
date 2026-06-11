@@ -15,6 +15,12 @@ type PostsResponse = {
   posts: Post[];
 };
 
+type ImageUploadResponse = {
+  ok: true;
+  imageUrl: string;
+  path: string;
+};
+
 type ApiError = {
   ok: false;
   message: string;
@@ -109,6 +115,7 @@ export function UpcomingPostsManager() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const sortedPosts = useMemo(
     () => [...posts].sort((a, b) => a.position - b.position),
@@ -184,6 +191,34 @@ export function UpcomingPostsManager() {
 
     await createPost(payload);
     setComposer(initialComposer);
+  }
+
+  async function uploadImage(file: File) {
+    setError(null);
+    setIsUploadingImage(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/uploads/image", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await readJson<ImageUploadResponse>(response);
+      setComposer((current) => ({
+        ...current,
+        imageUrl: data.imageUrl,
+      }));
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to upload image",
+      );
+    } finally {
+      setIsUploadingImage(false);
+    }
   }
 
   async function handleBulkSubmit(event: FormEvent<HTMLFormElement>) {
@@ -370,19 +405,37 @@ export function UpcomingPostsManager() {
           </label>
 
           <div className="composer-grid">
-            <label>
-              Photo URL
-              <input
-                onChange={(event) =>
-                  setComposer((current) => ({
-                    ...current,
-                    imageUrl: event.target.value,
-                  }))
-                }
-                placeholder="https://..."
-                value={composer.imageUrl}
-              />
-            </label>
+            <div className="image-upload-field">
+              <span>Photo</span>
+              <label className="file-upload-button">
+                {isUploadingImage ? "Uploading..." : "Upload image"}
+                <input
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  disabled={isUploadingImage}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+
+                    if (file) {
+                      void uploadImage(file);
+                    }
+
+                    event.target.value = "";
+                  }}
+                  type="file"
+                />
+              </label>
+              {composer.imageUrl ? (
+                <button
+                  className="link-button"
+                  onClick={() =>
+                    setComposer((current) => ({ ...current, imageUrl: "" }))
+                  }
+                  type="button"
+                >
+                  Remove image
+                </button>
+              ) : null}
+            </div>
             <label>
               Coin
               <input

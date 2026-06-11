@@ -328,6 +328,7 @@ button:disabled {
 }
 
 .composer-panel label,
+.image-upload-field,
 .bulk-panel label {
   display: grid;
   gap: 8px;
@@ -365,6 +366,32 @@ button:disabled {
   font-weight: 700;
   min-height: 44px;
   padding: 10px 14px;
+}
+
+.file-upload-button {
+  display: grid;
+  min-height: 44px;
+  place-items: center;
+  border: 1px solid var(--foreground);
+  border-radius: 6px;
+  background: var(--foreground);
+  color: #ffffff;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+.file-upload-button input {
+  display: none;
+}
+
+.link-button {
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+  text-align: left;
 }
 
 .square-preview {

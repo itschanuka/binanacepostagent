@@ -11,7 +11,9 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isLoginPage = pathname === "/admin/login";
   const isApiRoute =
-    pathname.startsWith("/api/posts") || pathname.startsWith("/api/settings");
+    pathname.startsWith("/api/posts") ||
+    pathname.startsWith("/api/settings") ||
+    pathname.startsWith("/api/uploads");
   const hasSupabaseEnv =
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -92,5 +94,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/posts/:path*", "/api/settings"],
+  matcher: [
+    "/admin/:path*",
+    "/api/posts/:path*",
+    "/api/settings",
+    "/api/uploads/:path*",
+  ],
 };
