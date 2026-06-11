@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUtcDayRange } from "@/lib/api";
 import { postToSquare } from "@/lib/binanceSquare";
 import type { Post, Settings } from "@/lib/database.types";
+import { buildSquarePostText } from "@/lib/squareContent";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 
 type CronResult =
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const postedAt = new Date().toISOString();
-    const squareResult = await postToSquare(nextPost.content);
+    const squareResult = await postToSquare(buildSquarePostText(nextPost));
 
     const { error: updateError } = await supabase
       .from("posts")

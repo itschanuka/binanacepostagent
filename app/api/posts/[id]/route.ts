@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
-import type { Post } from "@/lib/database.types";
+import type { Post, PostContentStyle } from "@/lib/database.types";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 
 type RouteContext = {
@@ -11,10 +11,50 @@ type RouteContext = {
 
 type PatchPostBody = {
   content?: unknown;
+  image_url?: unknown;
+  content_style?: unknown;
+  coin_symbol?: unknown;
+  chart_symbol?: unknown;
+  chart_interval?: unknown;
   position?: unknown;
 };
 
 const POSITION_OFFSET = 1_000_000;
+
+type PostMetadataUpdate = {
+  content?: string;
+  image_url?: string | null;
+  content_style?: PostContentStyle;
+  coin_symbol?: string | null;
+  chart_symbol?: string | null;
+  chart_interval?: string | null;
+};
+
+function cleanOptionalText(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text.length > 0 ? text : null;
+}
+
+function normalizeSymbol(value: unknown) {
+  const text = cleanOptionalText(value);
+  return text ? text.replace(/^\$/, "").toUpperCase() : null;
+}
+
+function normalizeStyle(value: unknown) {
+  const allowed: PostContentStyle[] = [
+    "market_update",
+    "news",
+    "analysis",
+    "education",
+    "question",
+  ];
+
+  if (!allowed.includes(value as PostContentStyle)) {
+    throw new Error("Invalid content style");
+  }
+
+  return value as PostContentStyle;
+}
 
 function parsePosition(value: unknown) {
   if (value === undefined) {
@@ -47,7 +87,7 @@ async function moveBatchToTemporaryPositions(posts: Pick<Post, "id" | "position"
 
 async function writeFinalPositions(
   posts: Pick<Post, "id">[],
-  contentUpdate?: { id: string; content: string },
+  metadataUpdate?: { id: string; values: PostMetadataUpdate },
 ) {
   const supabase = createServiceRoleClient();
 
@@ -55,13 +95,12 @@ async function writeFinalPositions(
     const post = posts[index];
     const updateValues: {
       position: number;
-      content?: string;
-    } = {
+    } & PostMetadataUpdate = {
       position: index + 1,
     };
 
-    if (contentUpdate?.id === post.id) {
-      updateValues.content = contentUpdate.content;
+    if (metadataUpdate?.id === post.id) {
+      Object.assign(updateValues, metadataUpdate.values);
     }
 
     const { error } = await supabase
@@ -87,9 +126,41 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
   const content =
     body.content === undefined ? null : String(body.content).trim();
+  const metadataUpdate: PostMetadataUpdate = {};
 
   if (content !== null && content.length === 0) {
     return apiError("Content cannot be empty", 400);
+  }
+
+  if (content !== null) {
+    metadataUpdate.content = content;
+  }
+
+  try {
+    if (body.image_url !== undefined) {
+      metadataUpdate.image_url = cleanOptionalText(body.image_url);
+    }
+
+    if (body.content_style !== undefined) {
+      metadataUpdate.content_style = normalizeStyle(body.content_style);
+    }
+
+    if (body.coin_symbol !== undefined) {
+      metadataUpdate.coin_symbol = normalizeSymbol(body.coin_symbol);
+    }
+
+    if (body.chart_symbol !== undefined) {
+      metadataUpdate.chart_symbol = normalizeSymbol(body.chart_symbol);
+    }
+
+    if (body.chart_interval !== undefined) {
+      metadataUpdate.chart_interval = cleanOptionalText(body.chart_interval);
+    }
+  } catch (error) {
+    return apiError(
+      error instanceof Error ? error.message : "Invalid post metadata",
+      400,
+    );
   }
 
   let requestedPosition: number | null;
@@ -119,13 +190,13 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
   try {
     if (requestedPosition === null) {
-      if (content === null) {
+      if (Object.keys(metadataUpdate).length === 0) {
         return NextResponse.json({ ok: true, post: existingPost });
       }
 
       const { data, error } = await supabase
         .from("posts")
-        .update({ content })
+        .update(metadataUpdate)
         .eq("id", params.id)
         .select("*")
         .single<Post>();
@@ -162,7 +233,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     await moveBatchToTemporaryPositions(posts);
     await writeFinalPositions(
       withoutCurrent,
-      content === null ? undefined : { id: params.id, content },
+      Object.keys(metadataUpdate).length === 0
+        ? undefined
+        : { id: params.id, values: metadataUpdate },
     );
 
     const { data: updatedPost, error: updatedError } = await supabase

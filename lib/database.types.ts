@@ -1,9 +1,19 @@
 export type PostStatus = "pending" | "posted";
+export type PostContentStyle =
+  | "market_update"
+  | "news"
+  | "analysis"
+  | "education"
+  | "question";
 
 export type Post = {
   id: string;
   content: string;
   image_url: string | null;
+  content_style: PostContentStyle;
+  coin_symbol: string | null;
+  chart_symbol: string | null;
+  chart_interval: string | null;
   status: PostStatus;
   batch_id: string;
   position: number;

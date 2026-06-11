@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { Post } from "@/lib/database.types";
+import type { Post, PostContentStyle } from "@/lib/database.types";
 
 type SettingsResponse = {
   ok: true;
@@ -19,6 +19,34 @@ type ApiError = {
   ok: false;
   message: string;
 };
+
+type ComposerState = {
+  content: string;
+  imageUrl: string;
+  contentStyle: PostContentStyle;
+  coinSymbol: string;
+  chartSymbol: string;
+  chartInterval: string;
+};
+
+const initialComposer: ComposerState = {
+  content: "",
+  imageUrl: "",
+  contentStyle: "market_update",
+  coinSymbol: "",
+  chartSymbol: "",
+  chartInterval: "4H",
+};
+
+const styleOptions: Array<{ value: PostContentStyle; label: string }> = [
+  { value: "market_update", label: "Market update" },
+  { value: "news", label: "News" },
+  { value: "analysis", label: "Analysis" },
+  { value: "education", label: "Education" },
+  { value: "question", label: "Question" },
+];
+
+const intervalOptions = ["15M", "1H", "4H", "1D", "1W"];
 
 function isApiError(response: unknown): response is ApiError {
   return (
@@ -39,7 +67,11 @@ function splitBulkContent(value: string, delimiter: string) {
 }
 
 function previewContent(content: string) {
-  return content.length > 140 ? `${content.slice(0, 140)}...` : content;
+  return content.length > 180 ? `${content.slice(0, 180)}...` : content;
+}
+
+function cleanSymbol(value: string) {
+  return value.trim().replace(/^\$/, "").toUpperCase();
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -52,10 +84,24 @@ async function readJson<T>(response: Response): Promise<T> {
   return data as T;
 }
 
+function composerPayload(composer: ComposerState) {
+  const coinSymbol = cleanSymbol(composer.coinSymbol);
+  const chartSymbol = cleanSymbol(composer.chartSymbol);
+
+  return {
+    content: composer.content.trim(),
+    image_url: composer.imageUrl.trim() || null,
+    content_style: composer.contentStyle,
+    coin_symbol: coinSymbol || null,
+    chart_symbol: chartSymbol || null,
+    chart_interval: chartSymbol ? composer.chartInterval : null,
+  };
+}
+
 export function UpcomingPostsManager() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
-  const [singleContent, setSingleContent] = useState("");
+  const [composer, setComposer] = useState<ComposerState>(initialComposer);
   const [bulkContent, setBulkContent] = useState("");
   const [bulkDelimiter, setBulkDelimiter] = useState("---");
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
@@ -102,7 +148,7 @@ export function UpcomingPostsManager() {
     void refreshPosts();
   }, []);
 
-  async function createPosts(contents: string[]) {
+  async function createPost(payload: ReturnType<typeof composerPayload>) {
     setIsSaving(true);
     setError(null);
 
@@ -112,7 +158,7 @@ export function UpcomingPostsManager() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ contents }),
+        body: JSON.stringify(payload),
       });
       await readJson<PostsResponse>(response);
       await refreshPosts();
@@ -120,24 +166,24 @@ export function UpcomingPostsManager() {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Failed to create posts",
+          : "Failed to create post",
       );
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function handleSingleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleComposerSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const content = singleContent.trim();
+    const payload = composerPayload(composer);
 
-    if (!content) {
+    if (!payload.content) {
       setError("Post content is required");
       return;
     }
 
-    await createPosts([content]);
-    setSingleContent("");
+    await createPost(payload);
+    setComposer(initialComposer);
   }
 
   async function handleBulkSubmit(event: FormEvent<HTMLFormElement>) {
@@ -149,8 +195,37 @@ export function UpcomingPostsManager() {
       return;
     }
 
-    await createPosts(contents);
-    setBulkContent("");
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/posts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents,
+          content_style: composer.contentStyle,
+          coin_symbol: cleanSymbol(composer.coinSymbol) || null,
+          chart_symbol: cleanSymbol(composer.chartSymbol) || null,
+          chart_interval: cleanSymbol(composer.chartSymbol)
+            ? composer.chartInterval
+            : null,
+        }),
+      });
+      await readJson<PostsResponse>(response);
+      setBulkContent("");
+      await refreshPosts();
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to import posts",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function startEditing(post: Post) {
@@ -163,7 +238,7 @@ export function UpcomingPostsManager() {
     setEditingContent("");
   }
 
-  async function saveEdit(postId: string) {
+  async function saveEdit(post: Post) {
     const content = editingContent.trim();
 
     if (!content) {
@@ -175,7 +250,7 @@ export function UpcomingPostsManager() {
     setError(null);
 
     try {
-      const response = await fetch(`/api/posts/${postId}`, {
+      const response = await fetch(`/api/posts/${post.id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -255,46 +330,158 @@ export function UpcomingPostsManager() {
 
   return (
     <div className="queue-layout">
-      <div className="queue-tools">
-        <form className="tool-panel" onSubmit={handleSingleSubmit}>
-          <h2>Add post</h2>
-          <label>
-            Content
-            <textarea
-              onChange={(event) => setSingleContent(event.target.value)}
-              placeholder="Write the next Binance Square post..."
-              rows={4}
-              value={singleContent}
-            />
-          </label>
-          <button disabled={isSaving} type="submit">
-            Add post
-          </button>
-        </form>
+      <form className="composer-panel" onSubmit={handleComposerSubmit}>
+        <div className="composer-main">
+          <div className="composer-header">
+            <div>
+              <h2>Square-style post</h2>
+              <p>Compose the queue item in the order it should appear.</p>
+            </div>
+            <select
+              onChange={(event) =>
+                setComposer((current) => ({
+                  ...current,
+                  contentStyle: event.target.value as PostContentStyle,
+                }))
+              }
+              value={composer.contentStyle}
+            >
+              {styleOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <form className="tool-panel" onSubmit={handleBulkSubmit}>
-          <h2>Bulk import</h2>
           <label>
-            Delimiter
-            <input
-              onChange={(event) => setBulkDelimiter(event.target.value)}
-              value={bulkDelimiter}
-            />
-          </label>
-          <label>
-            Posts
+            Post content
             <textarea
-              onChange={(event) => setBulkContent(event.target.value)}
-              placeholder="Post one&#10;---&#10;Post two&#10;---&#10;Post three"
+              onChange={(event) =>
+                setComposer((current) => ({
+                  ...current,
+                  content: event.target.value,
+                }))
+              }
+              placeholder="Start with the main idea, then add the setup, signal, or question..."
               rows={8}
-              value={bulkContent}
+              value={composer.content}
             />
           </label>
+
+          <div className="composer-grid">
+            <label>
+              Photo URL
+              <input
+                onChange={(event) =>
+                  setComposer((current) => ({
+                    ...current,
+                    imageUrl: event.target.value,
+                  }))
+                }
+                placeholder="https://..."
+                value={composer.imageUrl}
+              />
+            </label>
+            <label>
+              Coin
+              <input
+                onChange={(event) =>
+                  setComposer((current) => ({
+                    ...current,
+                    coinSymbol: event.target.value,
+                  }))
+                }
+                placeholder="BTC"
+                value={composer.coinSymbol}
+              />
+            </label>
+            <label>
+              Chart symbol
+              <input
+                onChange={(event) =>
+                  setComposer((current) => ({
+                    ...current,
+                    chartSymbol: event.target.value,
+                  }))
+                }
+                placeholder="BTCUSDT"
+                value={composer.chartSymbol}
+              />
+            </label>
+            <label>
+              Chart interval
+              <select
+                onChange={(event) =>
+                  setComposer((current) => ({
+                    ...current,
+                    chartInterval: event.target.value,
+                  }))
+                }
+                value={composer.chartInterval}
+              >
+                {intervalOptions.map((interval) => (
+                  <option key={interval} value={interval}>
+                    {interval}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
           <button disabled={isSaving} type="submit">
-            Import posts
+            Add to queue
           </button>
-        </form>
-      </div>
+        </div>
+
+        <aside className="square-preview">
+          <h3>Preview</h3>
+          {composer.imageUrl ? (
+            <img alt="" src={composer.imageUrl} />
+          ) : (
+            <div className="preview-image-empty">Photo preview</div>
+          )}
+          <p>{composer.content || "Your post content appears here."}</p>
+          <div className="metadata-row">
+            {composer.coinSymbol ? <span>${cleanSymbol(composer.coinSymbol)}</span> : null}
+            {composer.chartSymbol ? (
+              <span>
+                Chart {cleanSymbol(composer.chartSymbol)} {composer.chartInterval}
+              </span>
+            ) : null}
+            <span>
+              {styleOptions.find((option) => option.value === composer.contentStyle)
+                ?.label ?? "Market update"}
+            </span>
+          </div>
+        </aside>
+      </form>
+
+      <form className="bulk-panel" onSubmit={handleBulkSubmit}>
+        <div>
+          <h2>Bulk import</h2>
+          <p>Uses the selected coin/chart/style from the composer above.</p>
+        </div>
+        <label>
+          Delimiter
+          <input
+            onChange={(event) => setBulkDelimiter(event.target.value)}
+            value={bulkDelimiter}
+          />
+        </label>
+        <label>
+          Posts
+          <textarea
+            onChange={(event) => setBulkContent(event.target.value)}
+            placeholder="Post one&#10;---&#10;Post two&#10;---&#10;Post three"
+            rows={5}
+            value={bulkContent}
+          />
+        </label>
+        <button disabled={isSaving} type="submit">
+          Import posts
+        </button>
+      </form>
 
       <div className="table-panel">
         <div className="table-header">
@@ -328,7 +515,8 @@ export function UpcomingPostsManager() {
               <thead>
                 <tr>
                   <th>Position</th>
-                  <th>Content preview</th>
+                  <th>Post</th>
+                  <th>Metadata</th>
                   <th>Order</th>
                   <th>Actions</th>
                 </tr>
@@ -355,6 +543,18 @@ export function UpcomingPostsManager() {
                             {previewContent(post.content)}
                           </p>
                         )}
+                      </td>
+                      <td>
+                        <div className="metadata-row">
+                          {post.coin_symbol ? <span>${post.coin_symbol}</span> : null}
+                          {post.chart_symbol ? (
+                            <span>
+                              Chart {post.chart_symbol} {post.chart_interval}
+                            </span>
+                          ) : null}
+                          {post.image_url ? <span>Photo</span> : null}
+                          <span>{post.content_style.replace("_", " ")}</span>
+                        </div>
                       </td>
                       <td>
                         <div className="row-actions">
@@ -386,7 +586,7 @@ export function UpcomingPostsManager() {
                             <>
                               <button
                                 disabled={isSaving}
-                                onClick={() => void saveEdit(post.id)}
+                                onClick={() => void saveEdit(post)}
                                 type="button"
                               >
                                 Save

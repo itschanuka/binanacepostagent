@@ -1,38 +1,109 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
-import type { Post, Settings } from "@/lib/database.types";
+import type { Post, PostContentStyle, Settings } from "@/lib/database.types";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+
+type PostInput = {
+  content: string;
+  image_url?: string | null;
+  content_style?: PostContentStyle;
+  coin_symbol?: string | null;
+  chart_symbol?: string | null;
+  chart_interval?: string | null;
+};
 
 type CreatePostsBody =
   | {
       content?: string;
       contents?: string[];
-      posts?: Array<{ content?: string }>;
+      image_url?: string | null;
+      content_style?: PostContentStyle;
+      coin_symbol?: string | null;
+      chart_symbol?: string | null;
+      chart_interval?: string | null;
+      posts?: Array<Partial<PostInput>>;
     }
   | string[]
   | string;
 
-function normalizeContents(body: CreatePostsBody) {
+function cleanOptionalText(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text.length > 0 ? text : null;
+}
+
+function normalizeSymbol(value: unknown) {
+  const text = cleanOptionalText(value);
+  return text ? text.replace(/^\$/, "").toUpperCase() : null;
+}
+
+function normalizeStyle(value: unknown): PostContentStyle {
+  const allowed: PostContentStyle[] = [
+    "market_update",
+    "news",
+    "analysis",
+    "education",
+    "question",
+  ];
+
+  return allowed.includes(value as PostContentStyle)
+    ? (value as PostContentStyle)
+    : "market_update";
+}
+
+function normalizePosts(body: CreatePostsBody): PostInput[] {
   if (typeof body === "string") {
-    return [body.trim()].filter(Boolean);
+    const content = body.trim();
+    return content ? [{ content }] : [];
   }
 
   if (Array.isArray(body)) {
-    return body.map((content) => String(content).trim()).filter(Boolean);
+    return body
+      .map((content) => String(content).trim())
+      .filter(Boolean)
+      .map((content) => ({ content }));
   }
 
   if (Array.isArray(body.contents)) {
-    return body.contents.map((content) => String(content).trim()).filter(Boolean);
+    return body.contents
+      .map((content) => String(content).trim())
+      .filter(Boolean)
+      .map((content) => ({
+        content,
+        content_style: normalizeStyle(body.content_style),
+        image_url: cleanOptionalText(body.image_url),
+        coin_symbol: normalizeSymbol(body.coin_symbol),
+        chart_symbol: normalizeSymbol(body.chart_symbol),
+        chart_interval: cleanOptionalText(body.chart_interval),
+      }));
   }
 
   if (Array.isArray(body.posts)) {
     return body.posts
-      .map((post) => String(post.content ?? "").trim())
-      .filter(Boolean);
+      .map((post) => ({
+        content: String(post.content ?? "").trim(),
+        content_style: normalizeStyle(post.content_style),
+        image_url: cleanOptionalText(post.image_url),
+        coin_symbol: normalizeSymbol(post.coin_symbol),
+        chart_symbol: normalizeSymbol(post.chart_symbol),
+        chart_interval: cleanOptionalText(post.chart_interval),
+      }))
+      .filter((post) => post.content.length > 0);
   }
 
   if (body.content) {
-    return [body.content.trim()].filter(Boolean);
+    const content = body.content.trim();
+    return content
+      ? [
+          {
+            content,
+            content_style: normalizeStyle(body.content_style),
+            image_url: cleanOptionalText(body.image_url),
+            coin_symbol: normalizeSymbol(body.coin_symbol),
+            chart_symbol: normalizeSymbol(body.chart_symbol),
+            chart_interval: cleanOptionalText(body.chart_interval),
+          },
+        ]
+      : [];
   }
 
   return [];
@@ -102,15 +173,15 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const supabase = createServiceRoleClient();
-  let contents: string[];
+  let posts: PostInput[];
 
   try {
-    contents = normalizeContents((await request.json()) as CreatePostsBody);
+    posts = normalizePosts((await request.json()) as CreatePostsBody);
   } catch {
     return apiError("Request body must be valid JSON", 400);
   }
 
-  if (contents.length === 0) {
+  if (posts.length === 0) {
     return apiError("At least one post content value is required", 400);
   }
 
@@ -129,8 +200,13 @@ export async function POST(request: NextRequest) {
     }
 
     const nextPosition = (lastPost?.position ?? 0) + 1;
-    const rows = contents.map((content, index) => ({
-      content,
+    const rows = posts.map((post, index) => ({
+      content: post.content,
+      image_url: post.image_url ?? null,
+      content_style: post.content_style ?? "market_update",
+      coin_symbol: post.coin_symbol ?? null,
+      chart_symbol: post.chart_symbol ?? null,
+      chart_interval: post.chart_interval ?? null,
       batch_id: batchId,
       position: nextPosition + index,
       status: "pending",
