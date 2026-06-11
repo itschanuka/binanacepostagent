@@ -14,6 +14,7 @@ export type Post = {
   coin_symbol: string | null;
   chart_symbol: string | null;
   chart_interval: string | null;
+  scheduled_for: string | null;
   status: PostStatus;
   batch_id: string;
   position: number;
@@ -28,4 +29,5 @@ export type Settings = {
   daily_limit: number;
   active_batch_id: string | null;
   cycle_count: number;
+  post_interval_minutes: number;
 };

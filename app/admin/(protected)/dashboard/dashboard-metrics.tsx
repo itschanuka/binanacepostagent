@@ -9,6 +9,7 @@ type SettingsResponse = {
     daily_limit: number;
     active_batch_id: string | null;
     cycle_count: number;
+    post_interval_minutes: number;
   };
   progress: {
     postedInActiveBatch: number;

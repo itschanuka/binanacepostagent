@@ -10,6 +10,7 @@ type PostInput = {
   coin_symbol?: string | null;
   chart_symbol?: string | null;
   chart_interval?: string | null;
+  scheduled_for?: string | null;
 };
 
 type CreatePostsBody =
@@ -21,6 +22,7 @@ type CreatePostsBody =
       coin_symbol?: string | null;
       chart_symbol?: string | null;
       chart_interval?: string | null;
+      scheduled_for?: string | null;
       posts?: Array<Partial<PostInput>>;
     }
   | string[]
@@ -50,6 +52,22 @@ function normalizeStyle(value: unknown): PostContentStyle {
     : "market_update";
 }
 
+function normalizeScheduledFor(value: unknown) {
+  const text = cleanOptionalText(value);
+
+  if (!text) {
+    return null;
+  }
+
+  const date = new Date(text);
+
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("scheduled_for must be a valid date");
+  }
+
+  return date.toISOString();
+}
+
 function normalizePosts(body: CreatePostsBody): PostInput[] {
   if (typeof body === "string") {
     const content = body.trim();
@@ -74,6 +92,7 @@ function normalizePosts(body: CreatePostsBody): PostInput[] {
         coin_symbol: normalizeSymbol(body.coin_symbol),
         chart_symbol: normalizeSymbol(body.chart_symbol),
         chart_interval: cleanOptionalText(body.chart_interval),
+        scheduled_for: normalizeScheduledFor(body.scheduled_for),
       }));
   }
 
@@ -86,6 +105,7 @@ function normalizePosts(body: CreatePostsBody): PostInput[] {
         coin_symbol: normalizeSymbol(post.coin_symbol),
         chart_symbol: normalizeSymbol(post.chart_symbol),
         chart_interval: cleanOptionalText(post.chart_interval),
+        scheduled_for: normalizeScheduledFor(post.scheduled_for),
       }))
       .filter((post) => post.content.length > 0);
   }
@@ -101,6 +121,7 @@ function normalizePosts(body: CreatePostsBody): PostInput[] {
             coin_symbol: normalizeSymbol(body.coin_symbol),
             chart_symbol: normalizeSymbol(body.chart_symbol),
             chart_interval: cleanOptionalText(body.chart_interval),
+            scheduled_for: normalizeScheduledFor(body.scheduled_for),
           },
         ]
       : [];
@@ -207,6 +228,7 @@ export async function POST(request: NextRequest) {
       coin_symbol: post.coin_symbol ?? null,
       chart_symbol: post.chart_symbol ?? null,
       chart_interval: post.chart_interval ?? null,
+      scheduled_for: post.scheduled_for ?? null,
       batch_id: batchId,
       position: nextPosition + index,
       status: "pending",

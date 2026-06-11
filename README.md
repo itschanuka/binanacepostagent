@@ -167,7 +167,7 @@ The `/api/cron/post-square` route is protected by a shared secret (`CRON_SECRET`
 name: Post to Binance Square
 on:
   schedule:
-    - cron: '*/15 * * * *'   # every 15 minutes
+    - cron: '*/10 * * * *'   # every 10 minutes
   workflow_dispatch:          # allows manual trigger from GitHub UI
 
 jobs:
@@ -183,7 +183,9 @@ jobs:
             -H "Authorization: Bearer $CRON_SECRET"
 ```
 
-Runs independently of Vercel's cron limits — no Pro plan required.
+Runs independently of Vercel's cron limits — no Pro plan required. By default,
+the workflow calls the app every 10 minutes, so one due pending post is posted
+per 10-minute cycle until the active batch is exhausted.
 
 ### GitHub Actions setup
 

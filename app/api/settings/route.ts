@@ -6,6 +6,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 type PatchSettingsBody = {
   daily_limit?: unknown;
   active_batch_id?: unknown;
+  post_interval_minutes?: unknown;
 };
 
 function parseDailyLimit(value: unknown) {
@@ -42,11 +43,25 @@ function parseActiveBatchId(value: unknown) {
   return batchId;
 }
 
+function parsePostInterval(value: unknown) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const interval = Number(value);
+
+  if (!Number.isInteger(interval) || interval < 1) {
+    throw new Error("post_interval_minutes must be a positive integer");
+  }
+
+  return interval;
+}
+
 async function readSettings() {
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase
     .from("settings")
-    .select("id,daily_limit,active_batch_id,cycle_count")
+    .select("id,daily_limit,active_batch_id,cycle_count,post_interval_minutes")
     .eq("id", 1)
     .single<Settings>();
 
@@ -131,11 +146,13 @@ export async function PATCH(request: NextRequest) {
   const updateValues: {
     daily_limit?: number;
     active_batch_id?: string | null;
+    post_interval_minutes?: number;
   } = {};
 
   try {
     const dailyLimit = parseDailyLimit(body.daily_limit);
     const activeBatchId = parseActiveBatchId(body.active_batch_id);
+    const postInterval = parsePostInterval(body.post_interval_minutes);
 
     if (dailyLimit !== undefined) {
       updateValues.daily_limit = dailyLimit;
@@ -143,6 +160,10 @@ export async function PATCH(request: NextRequest) {
 
     if (activeBatchId !== undefined) {
       updateValues.active_batch_id = activeBatchId;
+    }
+
+    if (postInterval !== undefined) {
+      updateValues.post_interval_minutes = postInterval;
     }
   } catch (error) {
     return apiError(
@@ -159,7 +180,7 @@ export async function PATCH(request: NextRequest) {
     .from("settings")
     .update(updateValues)
     .eq("id", 1)
-    .select("id,daily_limit,active_batch_id,cycle_count")
+    .select("id,daily_limit,active_batch_id,cycle_count,post_interval_minutes")
     .single<Settings>();
 
   if (error) {

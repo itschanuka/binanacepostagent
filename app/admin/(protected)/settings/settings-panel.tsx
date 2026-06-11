@@ -8,6 +8,7 @@ type SettingsResponse = {
     daily_limit: number;
     active_batch_id: string | null;
     cycle_count: number;
+    post_interval_minutes: number;
   };
   progress: {
     postedInActiveBatch: number;
@@ -178,6 +179,10 @@ export function SettingsPanel() {
               {data.progress.postedInActiveBatch} /{" "}
               {data.progress.totalInActiveBatch} posted
             </dd>
+          </div>
+          <div>
+            <dt>Posting interval</dt>
+            <dd>Every {data.settings.post_interval_minutes} minutes</dd>
           </div>
           <div>
             <dt>Posted today</dt>

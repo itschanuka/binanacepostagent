@@ -16,6 +16,7 @@ type PatchPostBody = {
   coin_symbol?: unknown;
   chart_symbol?: unknown;
   chart_interval?: unknown;
+  scheduled_for?: unknown;
   position?: unknown;
 };
 
@@ -28,6 +29,7 @@ type PostMetadataUpdate = {
   coin_symbol?: string | null;
   chart_symbol?: string | null;
   chart_interval?: string | null;
+  scheduled_for?: string | null;
 };
 
 function cleanOptionalText(value: unknown) {
@@ -54,6 +56,22 @@ function normalizeStyle(value: unknown) {
   }
 
   return value as PostContentStyle;
+}
+
+function normalizeScheduledFor(value: unknown) {
+  const text = cleanOptionalText(value);
+
+  if (!text) {
+    return null;
+  }
+
+  const date = new Date(text);
+
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("scheduled_for must be a valid date");
+  }
+
+  return date.toISOString();
 }
 
 function parsePosition(value: unknown) {
@@ -155,6 +173,10 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
     if (body.chart_interval !== undefined) {
       metadataUpdate.chart_interval = cleanOptionalText(body.chart_interval);
+    }
+
+    if (body.scheduled_for !== undefined) {
+      metadataUpdate.scheduled_for = normalizeScheduledFor(body.scheduled_for);
     }
   } catch (error) {
     return apiError(
